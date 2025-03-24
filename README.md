@@ -27,7 +27,7 @@ LokiPool是一个使用Rust编写的高性能SOCKS5代理池管理工具，能�
 
 ### 预编译二进制文件
 
-从[Releases页面](https://github.com/LeiA/LokiPool/releases)下载适合您系统的预编译二进制文件：
+从[Releases页面](https://github.com/Le1a/LokiPool/releases)下载适合您系统的预编译二进制文件：
 
 - `lokipool-linux-x86_64` - Linux (64位)
 - `lokipool-windows-x86_64.exe` - Windows (64位)
