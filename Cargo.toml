@@ -1,24 +1,57 @@
 [package]
-name = "lokipool"
-version = "0.1.0"
-edition = "2021"
-authors = ["LokiPool Developer"]
-description = "A SOCKS5 proxy pool manager with latency testing"
+name = "lokipool" 
+version = "0.1.0" 
+edition = "2021" 
+authors = ["LokiPool Developer"] 
+description = "A SOCKS5 proxy pool manager with latency testing" 
+license = "MIT OR Apache-2.0" 
+repository = "https://github.com/n-wn/lokipool" 
+keywords = ["proxy", "socks5", "pool", "networking"] 
+categories = ["network-programming", "asynchronous"] 
+
+[features]
+default = ["ui", "metrics"]
+ui = ["colored", "indicatif", "console"] 
+metrics = [] 
 
 [dependencies]
-tokio = { version = "1.36", features = ["full"] }
-futures = "0.3"
-reqwest = { version = "0.11", features = ["socks", "rustls-tls"], default-features = false }
-anyhow = "1.0"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-colored = "2.0"
-indicatif = "0.17"
-console = "0.15"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-deadpool = { version = "0.9", features = ["managed"] }
-tokio-util = "0.7"
-async-trait = "0.1"
-rayon = "1.8"
-num_cpus = "1.16"
+lokipool-core = { path = "crates/lokipool-core", version = "0.1.0" }
+lokipool-cli = { path = "crates/lokipool-cli", version = "0.1.0" }
+
+# 保留只有主程序用到的依赖
+tokio = { version = "1.44.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "sync", "io-std"], default-features = false }
+anyhow = "1.0.97" 
+tracing = "0.1" 
+colored = { version = "3.0.0", optional = true } 
+indicatif = { version = "0.17.11", optional = true } 
+console = { version = "0.15.11", optional = true } 
+
+# 添加reqwest依赖，因为src/socks_server.rs中可能需要它
+reqwest = { version = "0.12.14", features = ["socks", "rustls-tls"], default-features = false }
+
+# 移除所有core库中已经包含的依赖项
+# ...
+
+[dev-dependencies]
+mockito = "1.2" 
+tokio-test = "0.4" 
+criterion = "0.5" 
+test-log = { version = "0.2", features = ["trace"] } 
+
+[workspace]
+members = [
+  "crates/lokipool-core",
+  "crates/lokipool-cli",
+  "crates/lokipool-api"
+]
+
+[profile.release]
+lto = true 
+codegen-units = 1 
+opt-level = 3 
+panic = "abort" 
+strip = true 
+
+[[bin]]
+name = "lokipool"
+path = "src/main.rs"

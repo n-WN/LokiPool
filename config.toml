@@ -1,16 +1,24 @@
-[server]
-bind_host = "127.0.0.1"
-bind_port = 56789
-max_connections = 100
+# LokiPool 配置文件
 
+# 全局设置
+timeout_ms = 10000  # 全局超时设置（毫秒）
+max_connections = 100  # 最大并发连接数
+retry_count = 3  # 重试次数
+test_urls = ["http://www.baidu.com"]
+
+# 代理设置
 [proxy]
-proxy_file = "proxies.txt"
-test_timeout = 5
-health_check_interval = 300 # 健康检测间隔(秒)
-retry_times = 3
-auto_switch = false        # 是否开启自动切换代理
-switch_interval = 5      # 自动切换间隔(秒)
+proxy_file = "proxies.txt"  # 代理文件路径
+test_timeout = 10  # 测试超时时间（秒）
+health_check_interval = 300  # 健康检查间隔（秒）
+retry_times = 3  # 最大重试次数
 
-[log]
-show_connection_log = false  # 设置为 false 可以关闭连接日志
-show_error_log = false      # 设置为 false 可以关闭错误日志
+# 代理列表
+# 格式: [[proxies]] 表示代理列表中的一项
+[[proxies]]
+host = "127.0.0.1"
+port = 1080
+# username = "user"  # 可选
+# password = "pass"  # 可选
+location = "Local"  # 可选
+proxy_type = "socks5"  # 可选，默认为socks5

@@ -1,0 +1,20 @@
+[package]
+name = "lokipool-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI interface for LokiPool SOCKS5 proxy manager"
+authors = ["LokiPool Developers"]
+license = "GPL-3.0"
+
+[dependencies]
+lokipool-core = { path = "../lokipool-core" }
+anyhow = "1.0.97"
+tokio = { version = "1.44.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+colored = "2.0"
+console = "0.15"
+indicatif = "0.17"
+rustyline = "12.0"
+chrono = { version = "0.4.35", features = ["serde"] }
+futures = "0.3.31"

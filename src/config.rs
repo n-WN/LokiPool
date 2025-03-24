@@ -3,73 +3,69 @@ use std::fs;
 use std::path::Path;
 use anyhow::Result;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// 主配置结构体
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub server: ServerConfig,
-    pub proxy: ProxyConfig,
-    pub log: LogConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ServerConfig {
-    pub bind_host: String,
-    pub bind_port: u16,
+    /// 全局超时设置（毫秒）
+    pub timeout_ms: u64,
+    /// 最大并发连接数
     pub max_connections: usize,
+    /// 重试次数
+    pub retry_count: usize,
+    /// 代理列表
+    pub proxies: Vec<ProxyConfig>,
+    /// 测试URL
+    pub test_urls: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// 单个代理的配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyConfig {
-    pub proxy_file: String,
-    pub test_timeout: u64,
-    pub health_check_interval: u64,
-    pub retry_times: u32,
-    pub auto_switch: bool,
-    pub switch_interval: u64,
+    /// 代理服务器地址
+    pub host: String,
+    /// 代理服务器端口
+    pub port: u16,
+    /// 用户名（可选）
+    pub username: Option<String>,
+    /// 密码（可选）
+    pub password: Option<String>,
+    /// 代理位置/标签（可选）
+    pub location: Option<String>,
+    /// 代理类型
+    #[serde(default = "default_proxy_type")]
+    pub proxy_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LogConfig {
-    pub show_connection_log: bool,
-    pub show_error_log: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            server: ServerConfig {
-                bind_host: "127.0.0.1".to_string(),
-                bind_port: 1080,
-                max_connections: 100,
-            },
-            proxy: ProxyConfig {
-                proxy_file: "proxies.txt".to_string(),
-                test_timeout: 5,
-                health_check_interval: 300,
-                retry_times: 3,
-                auto_switch: false,
-                switch_interval: 300,
-            },
-            log: LogConfig {
-                show_connection_log: true,
-                show_error_log: false,
-            },
-        }
-    }
+fn default_proxy_type() -> String {
+    "socks5".to_string()
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        let config_path = Path::new("config.toml");
-        
-        if !config_path.exists() {
-            let config = Config::default();
-            let toml = toml::to_string_pretty(&config)?;
-            fs::write(config_path, toml)?;
-            return Ok(config);
-        }
-        
-        let content = fs::read_to_string(config_path)?;
-        let config: Config = toml::from_str(&content)?;
+    /// 从文件加载配置
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let content = fs::read_to_string(path)?;
+        let config = toml::from_str(&content)?;
         Ok(config)
     }
-} 
+
+    /// 保存配置到文件
+    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let content = toml::to_string_pretty(self)?;
+        fs::write(path, content)?;
+        Ok(())
+    }
+
+    /// 创建默认配置
+    pub fn default() -> Self {
+        Self {
+            timeout_ms: 5000,
+            max_connections: 100,
+            retry_count: 3,
+            proxies: vec![],
+            test_urls: vec![
+                "https://www.google.com".to_string(),
+                "https://www.github.com".to_string(),
+            ],
+        }
+    }
+}

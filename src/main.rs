@@ -1,159 +1,291 @@
-use tokio::io::{self, AsyncBufReadExt, BufReader};
-use std::io::Write;
 use anyhow::Result;
-use lokipool::{Config, SocksServer};
-use tokio::signal;
-use colored::*;
+use lokipool::{Config, Pool, PoolOptions, init_logger};
+use tracing::{info, error};
+use std::path::Path;
+use std::io::{self, Write};
+use tokio::sync::{mpsc, broadcast};
+use tokio::time::{sleep, Duration, timeout};
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
-const LOGO: &str = r#"
-██╗      ██████╗ ██╗  ██╗██╗██████╗  ██████╗  ██████╗ ██╗     
-██║     ██╔═══██╗██║ ██╔╝██║██╔══██╗██╔═══██╗██╔═══██╗██║     
-██║     ██║   ██║█████╔╝ ██║██████╔╝██║   ██║██║   ██║██║     
-██║     ██║   ██║██╔═██╗ ██║██╔═══╝ ██║   ██║██║   ██║██║     
-███████╗╚██████╔╝██║  ██╗██║██║     ╚██████╔╝╚██████╔╝███████╗
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝  ╚═════╝ ╚══════╝
-"#;
+mod socks_server;
+use socks_server::{SocksServer, SocksServerConfig};
+
+// 如果需要使用ProxyConfig，需要将其添加到导入中
+use lokipool::ProxyConfig;
 
 const VERSION: &str = "v0.1.0";
+const BANNER: &str = r#"
+╦  ╔═╗╦╔═╦╔═╗╔═╗╔═╗╦  
+║  ║ ║╠╩╗║╠═╝║ ║║ ║║  
+╩═╝╚═╝╩ ╩╩╩  ╚═╝╚═╝╩═╝
+"#;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // 初始化日志
-    tracing_subscriber::fmt::init();
-
-    // 显示Logo和版本信息
-    println!("{}", LOGO.bright_cyan());
-    println!("{}", "A Fast and Reliable SOCKS5 Proxy Pool".bright_black());
-    println!("{} {}", "Version:".bright_black(), VERSION.bright_black());
-    println!("{} {}", "Author:".bright_black(), "Le1a".bright_black());
-    println!("{} {}\n", "GitHub:".bright_black(), "https://github.com/Le1a/LokiPool".bright_blue().underline());
-
-    // 加载配置
-    let config = match Config::load() {
-        Ok(cfg) => {
-            println!("{}", "成功加载配置文件".green().bold());
-            cfg
+    init_logger();
+    
+    // 显示程序信息
+    println!("{} {}", BANNER, VERSION);
+    info!("LokiPool SOCKS5 proxy manager starting...");
+    
+    // 加载或创建配置
+    let config_path = Path::new("config.toml");
+    let config = if config_path.exists() {
+        match Config::from_file(config_path) {
+            Ok(cfg) => {
+                info!("配置已从 {} 加载", config_path.display());
+                cfg
+            }
+            Err(e) => {
+                error!("加载配置失败: {} - 使用默认配置", e);
+                // 尝试读取内容并记录问题
+                if let Ok(content) = std::fs::read_to_string(config_path) {
+                    error!("配置文件内容预览: \n{}", content.lines().take(5).collect::<Vec<_>>().join("\n"));
+                }
+                Config::default()
+            }
         }
-        Err(e) => {
-            eprintln!("{} {}", "加载配置文件失败:".red().bold(), e);
-            return Ok(());
+    } else {
+        info!("配置文件不存在，使用默认配置");
+        let default_config = Config::default();
+        // 创建示例配置
+        let example_config = create_example_config();
+        if let Err(e) = example_config.save_to_file(config_path) {
+            error!("保存示例配置失败: {}", e);
+        } else {
+            info!("示例配置已保存到 {}", config_path.display());
         }
+        default_config
     };
-
-    // 创建SOCKS5服务器
-    let server = SocksServer::new(config.clone());
-    println!("\n{}", "创建SOCKS5服务器...".cyan().bold());
     
-    // 显示自动切换配置
-    if config.proxy.auto_switch {
-        println!("{} {} {}", 
-            "自动切换已开启,间隔:".green().bold(),
-            config.proxy.switch_interval.to_string().yellow().bold(),
-            "秒".green().bold()
-        );
-    }
+    // 创建池选项
+    let pool_options = PoolOptions::from_config(&config);
     
-    // 加载代理列表
-    let proxy_file = config.proxy.proxy_file.clone();
-    if let Err(e) = server.get_proxy_pool().load_from_file(&proxy_file).await {
-        eprintln!("{} {}", "加载代理列表失败:".red().bold(), e);
-        return Ok(());
-    }
+    // 创建代理池
+    let mut pool = Pool::new_with_proxies(config.proxies.clone(), pool_options.clone());
     
-    // 创建用户输入处理任务
-    let server_clone = server.clone();
-    let input_handle = tokio::spawn(async move {
-        let (host, port) = server_clone.get_bind_info();
-        println!("\n{} {}:{}", 
-            "代理服务器已启动在".green().bold(),
-            host,
-            port
-        );
-        println!("\n可用命令:");
-        println!("  list  - 显示所有代理");
-        println!("  next  - 切换到下一个代理");
-        println!("  show  - 显示当前代理");
-        println!("  quit  - 退出程序\n");
+    // 在测试所有代理之前，确保有代理存在
+    if config.proxies.is_empty() {
+        info!("没有找到任何代理配置，请在config.toml中添加代理或使用代理文件");
         
-        print!("> ");
-        let _ = std::io::stdout().flush();
+        // 如果没有代理，创建一个本地示例代理以便程序可以继续运行
+        let local_proxy = ProxyConfig {
+            host: "127.0.0.1".to_string(),
+            port: 1080,
+            username: None,
+            password: None,
+            location: Some("Local".to_string()),
+            proxy_type: "socks5".to_string(),
+        };
+        
+        info!("添加了一个本地示例代理 127.0.0.1:1080 以便程序继续运行");
+        let mut proxies = Vec::new();
+        proxies.push(local_proxy);
+        
+        // 创建代理池
+        pool = Pool::new_with_proxies(proxies, pool_options);
+    }
+    
+    // 测试所有代理
+    info!("开始测试代理...");
+    let test_results = pool.test_all().await;
+    
+    // 显示测试结果
+    for (config, result) in test_results {
+        if result.success {
+            info!(
+                "代理 {}:{} 测试成功, 延迟: {}ms", 
+                config.host, 
+                config.port, 
+                result.latency.unwrap_or(0)
+            );
+        } else {
+            error!(
+                "代理 {}:{} 测试失败: {}", 
+                config.host, 
+                config.port, 
+                result.error.unwrap_or_else(|| "未知错误".to_string())
+            );
+        }
+    }
+    
+    // 创建关闭信号通道
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    let shutdown_rx = shutdown_tx.subscribe();
+    
+    // 创建SOCKS5服务器
+    let socks_config = SocksServerConfig::default();
+    let socks_server = SocksServer::new(socks_config.clone(), pool.clone());
+    
+    // 启动SOCKS5服务器，带退出控制
+    let server_handle = {
+        let shutdown_rx = shutdown_rx;
+        tokio::spawn(async move {
+            if let Err(e) = socks_server.run_with_shutdown(shutdown_rx).await {
+                error!("SOCKS5服务器运行出错: {}", e);
+            }
+        })
+    };
+    
+    info!("SOCKS5服务器已启动: {}:{}", socks_config.bind_address, socks_config.bind_port);
+    info!("请配置您的应用程序使用此代理服务器");
+    
+    // 启动交互式命令行
+    let (tx, mut rx) = mpsc::channel::<String>(100);
+    
+    // 命令处理线程
+    let cmd_pool = Arc::new(TokioMutex::new(pool));
+    let shutdown_tx_clone = shutdown_tx.clone();
+    let cmd_handle = {
+        let pool = Arc::clone(&cmd_pool);
+        tokio::spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                match cmd.trim() {
+                    "show" => {
+                        let pool = pool.lock().await;
+                        match pool.get_available() {
+                            Some(proxy) => {
+                                println!("当前代理: {}:{} (延迟: {}ms)",
+                                    proxy.info.host, 
+                                    proxy.info.port,
+                                    proxy.latency
+                                );
+                            },
+                            None => println!("没有可用的代理"),
+                        }
+                        // 确保输出被立即刷新
+                        io::stdout().flush().unwrap();
+                    },
+                    "list" => {
+                        println!("代理列表功能尚未实现");
+                        io::stdout().flush().unwrap();
+                    },
+                    "next" => {
+                        println!("切换代理功能尚未实现");
+                        io::stdout().flush().unwrap();
+                    },
+                    "test" => {
+                        // 重新测试所有代理
+                        println!("重新测试所有代理...");
+                        let pool = pool.lock().await;
+                        let results = pool.test_all().await;
+                        println!("测试完成，共 {} 个代理", results.len());
+                        for (config, result) in results {
+                            if result.success {
+                                println!("✓ {}:{} - {}ms", 
+                                    config.host, 
+                                    config.port, 
+                                    result.latency.unwrap_or(0)
+                                );
+                            } else {
+                                println!("✗ {}:{} - {}", 
+                                    config.host, 
+                                    config.port, 
+                                    result.error.unwrap_or_else(|| "未知错误".to_string())
+                                );
+                            }
+                        }
+                        io::stdout().flush().unwrap();
+                    },
+                    "help" => {
+                        println!("可用命令:");
+                        println!("  show - 显示当前使用的代理及其延迟");
+                        println!("  list - 显示所有可用代理及其延迟排序");
+                        println!("  next - 手动切换到下一个代理");
+                        println!("  test - 重新测试所有代理");
+                        println!("  help - 显示帮助信息");
+                        println!("  quit - 退出程序");
+                        // 确保输出被立即刷新
+                        io::stdout().flush().unwrap();
+                    },
+                    "quit" | "exit" => {
+                        println!("程序退出中...");
+                        io::stdout().flush().unwrap();
+                        // 发送关闭信号
+                        let _ = shutdown_tx_clone.send(());
+                        break;
+                    },
+                    "" => {},
+                    _ => {
+                        println!("未知命令: {}，输入 help 查看帮助", cmd);
+                        io::stdout().flush().unwrap();
+                    }
+                }
+            }
+        })
+    };
+    
+    // 命令行输入线程
+    let input_handle = tokio::spawn(async move {
+        println!("\n输入 'help' 查看可用命令，输入 'quit' 退出程序");
+        io::stdout().flush().unwrap();
         
         let stdin = io::stdin();
-        let reader = BufReader::new(stdin);
-        let mut lines = reader.lines();
-
-        while let Ok(Some(line)) = lines.next_line().await {
-            match line.trim() {
-                "list" => {
-                    println!("\n当前代理列表:");
-                    for (i, proxy) in server_clone.get_proxy_pool().list_proxies().await.iter().enumerate() {
-                        let latency = proxy.latency.as_millis();
-                        let latency_str = match latency {
-                            0..=100 => latency.to_string().green(),
-                            101..=300 => latency.to_string().yellow(),
-                            _ => latency.to_string().red(),
-                        };
-                        println!("{:3}. {} - {}ms", 
-                            (i + 1).to_string().blue().bold(),
-                            proxy.address.cyan(),
-                            latency_str
-                        );
-                    }
-                    println!();
-                }
-                "next" => {
-                    if let Some(proxy) = server_clone.get_proxy_pool().next_proxy().await {
-                        println!("{} {} ({}: {}ms)", 
-                            "切换到代理:".green().bold(),
-                            proxy.address.cyan(),
-                            "延迟".yellow(),
-                            proxy.latency.as_millis().to_string().yellow()
-                        );
-                    } else {
-                        println!("{}", "没有可用的代理".red().bold());
-                    }
-                }
-                "show" => {
-                    if let Some(proxy) = server_clone.get_proxy_pool().get_current_proxy().await {
-                        println!("{} {} ({}: {}ms)", 
-                            "当前代理:".green().bold(),
-                            proxy.address.cyan(),
-                            "延迟".yellow(),
-                            proxy.latency.as_millis().to_string().yellow()
-                        );
-                    } else {
-                        println!("{}", "没有可用的代理".red().bold());
-                    }
-                }
-                "quit" => break,
-                "" => {}, // 忽略空行
-                _ => println!("{}", "未知命令".red()),
-            }
+        let mut buffer = String::new();
+        
+        loop {
             print!("> ");
-            let _ = std::io::stdout().flush();
+            io::stdout().flush().unwrap();
+            buffer.clear();
+            
+            if stdin.read_line(&mut buffer).is_err() {
+                sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+            
+            let cmd = buffer.trim().to_string();
+            // 立即发送命令，不要等待
+            if let Err(e) = tx.send(cmd.clone()).await {
+                eprintln!("发送命令失败: {}", e);
+                break;
+            }
+            
+            if cmd == "quit" || cmd == "exit" {
+                break;
+            }
+            
+            // 添加短暂延迟，确保命令处理线程有时间处理命令
+            sleep(Duration::from_millis(50)).await;
         }
     });
-
-    // 启动服务器
-    let server_handle = tokio::spawn(async move {
-        if let Err(e) = server.run().await {
-            eprintln!("{} {}", "服务器错误:".red().bold(), e);
-        }
-    });
-
-    // 等待Ctrl+C信号或用户输入quit
-    tokio::select! {
-        _ = signal::ctrl_c() => {
-            println!("\n{}", "接收到终止信号，正在关闭服务器...".yellow().bold());
-        }
-        _ = input_handle => {
-            println!("{}", "用户请求退出，正在关闭服务器...".yellow().bold());
+    
+    // 等待所有任务完成
+    let _ = cmd_handle.await;
+    let _ = input_handle.await;
+    
+    // 确保SOCKS5服务器关闭后再退出
+    let shutdown_timeout = Duration::from_secs(3);
+    match timeout(shutdown_timeout, server_handle).await {
+        Ok(_) => info!("SOCKS5服务器已正常关闭"),
+        Err(_) => {
+            info!("SOCKS5服务器关闭超时，强制关闭");
+            // 强制关闭，不再等待
         }
     }
-
-    // 中止服务器任务
-    server_handle.abort();
-    println!("{}", "服务器已关闭".green().bold());
-
+    
+    // 程序退出
+    info!("LokiPool 已退出");
     Ok(())
+}
+
+// 添加辅助函数生成示例配置
+fn create_example_config() -> Config {
+    let mut config = Config::default();
+    
+    // 添加一些示例代理
+    config.proxies.push(ProxyConfig {
+        host: "127.0.0.1".to_string(),
+        port: 1080,
+        username: None,
+        password: None,
+        location: Some("Local".to_string()),
+        proxy_type: "socks5".to_string(),
+    });
+    
+    // 可以添加更多示例代理
+    // config.proxies.push(...);
+    
+    config
 }

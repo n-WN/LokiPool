@@ -1,0 +1,20 @@
+[package]
+name = "lokipool-api"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP API for LokiPool SOCKS5 proxy manager"
+authors = ["LokiPool Developers"]
+license = "GPL-3.0"
+
+[dependencies]
+lokipool-core = { path = "../lokipool-core" }
+anyhow = "1.0.97"
+tokio = { version = "1.44.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }
+axum = "0.6"
+tower = "0.4"
+tower-http = { version = "0.4", features = ["trace", "cors"] }
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4.35", features = ["serde"] }
+futures = "0.3.31"

@@ -1,0 +1,23 @@
+[package]
+name = "lokipool-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core functionality for LokiPool SOCKS5 proxy manager"
+authors = ["LokiPool Developer"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1.0.97"
+chrono = { version = "0.4.35", features = ["serde"] }
+colored = "3.0.0"
+futures = "0.3.31"
+indicatif = "0.17.11"
+reqwest = { version = "0.12.14", features = ["socks", "rustls-tls"], default-features = false }
+serde = { version = "1.0.219", features = ["derive"] }
+thiserror = "1.0.69"
+tokio = { version = "1.44.1", features = ["rt", "sync", "net", "time"] }
+toml = "0.8.20"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+async-trait = "0.1.88"
