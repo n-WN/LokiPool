@@ -1,96 +1,119 @@
-name: Multi-Arch Build
+name: Build and Release
+
 on:
   push:
     tags:
-      - "v*"
-env:
-  CARGO_TERM_COLOR: always
-  BIN_NAME: "lokipool"
+      - 'v*'
+    branches:
+      - main  # 可选：每次推送到main也构建
 
 jobs:
-  build:
-    name: Build ${{ matrix.build }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        build: [linux-x64, linux-arm64, macos-x64, macos-arm64, windows]
-        include:
-          # Linux x86_64 (musl静态编译)
-          - build: linux-x64
-            os: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-            release-suffix: x86_64-linux.tar.gz
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y musl-tools libssl-dev pkg-config
-
-          # Linux ARM64 (musl静态编译)
-          - build: linux-arm64
-            os: ubuntu-22.04
-            target: aarch64-unknown-linux-musl
-            release-suffix: aarch64-linux.tar.gz
-            setup: |
-              sudo apt-get update
-              sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev pkg-config
-
-          # macOS Intel
-          - build: macos-x64
-            os: macos-14
-            target: x86_64-apple-darwin
-            release-suffix: x86_64-macos.tar.gz
-
-          # macOS ARM64
-          - build: macos-arm64
-            os: macos-14  # GitHub已支持M1 Runner
-            target: aarch64-apple-darwin
-            release-suffix: arm64-macos.tar.gz
-
-          # Windows
-          - build: windows
-            os: windows-2022
-            target: x86_64-pc-windows-msvc
-            release-suffix: x86_64-windows.7z
-
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
+      
+      - name: 编译Linux静态二进制文件
+        uses: emk/rust-musl-builder@master
+        with:
+          command: cargo build --release
+          
+      - name: 上传Linux构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: lokipool-linux-x86_64
+          path: target/x86_64-unknown-linux-musl/release/lokipool
 
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@master
+  build-windows:
+    name: Build Windows Binary
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装Rust工具链
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          targets: ${{ matrix.target }}
-
-      - name: Setup Dependencies
-        if: matrix.setup != ''
-        run: ${{ matrix.setup }}
-
-      - name: Build Release
+          target: x86_64-pc-windows-msvc
+          profile: minimal
+          override: true
+      
+      - name: 安装OpenSSL
         run: |
-          cargo build --release --target ${{ matrix.target }} \
-            --config=target.${{ matrix.target }}.rustflags='["-C", "target-feature=+crt-static"]'
-        env:
-          PKG_CONFIG_ALLOW_CROSS: 1
-          OPENSSL_STATIC: 1  # 强制OpenSSL静态编译[5](@ref)
-          RUSTFLAGS: "-C target-feature=+crt-static"
+          choco install openssl
+          echo "OPENSSL_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=C:/Program Files/OpenSSL-Win64/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=C:/Program Files/OpenSSL-Win64/include" >> $GITHUB_ENV
+        shell: bash
+      
+      - name: 编译Windows二进制文件
+        run: cargo build --release
+        
+      - name: 上传Windows构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: lokipool-windows-x86_64
+          path: target/release/lokipool.exe
 
-      - name: Strip Symbols (Unix)
-        if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'macos')
-        run: strip "target/${{ matrix.target }}/release/${{ env.BIN_NAME }}"
-
-      - name: Package Artifacts
+  build-macos:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装Rust工具链
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          profile: minimal
+          override: true
+          
+      - name: 安装OpenSSL
+        run: brew install openssl@1.1
+        
+      - name: 设置OpenSSL环境变量
         run: |
-          mkdir -p dist temp
-          cp LICENSE README.md target/${{ matrix.target }}/release/${{ env.BIN_NAME }}* temp/
-          cd temp
-          if [[ "${{ matrix.build }}" == windows* ]]; then
-            7z a -r "../dist/${{ env.BIN_NAME }}-${{ github.ref_name }}-${{ matrix.release-suffix }}" *
-          else
-            tar czf "../dist/${{ env.BIN_NAME }}-${{ github.ref_name }}-${{ matrix.release-suffix }}" *
-          fi
+          echo "OPENSSL_DIR=$(brew --prefix openssl@1.1)" >> $GITHUB_ENV
+          
+      - name: 编译macOS二进制文件
+        run: cargo build --release --target ${{ matrix.target }}
+        
+      - name: 上传macOS构建产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: lokipool-macos-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/lokipool
 
-      - name: Upload Release
+  create-release:
+    name: 创建GitHub Release
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v3
+        
+      - name: 准备发布文件
+        run: |
+          mkdir -p release-artifacts
+          mv lokipool-linux-x86_64/lokipool release-artifacts/lokipool-linux-x86_64
+          mv lokipool-windows-x86_64/lokipool.exe release-artifacts/lokipool-windows-x86_64.exe
+          mv lokipool-macos-x86_64-apple-darwin/lokipool release-artifacts/lokipool-macos-x86_64
+          mv lokipool-macos-aarch64-apple-darwin/lokipool release-artifacts/lokipool-macos-arm64
+          chmod +x release-artifacts/*
+          
+      - name: 创建GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/*
-          draft: false
+          files: |
+            release-artifacts/lokipool-linux-x86_64
+            release-artifacts/lokipool-windows-x86_64.exe
+            release-artifacts/lokipool-macos-x86_64
+            release-artifacts/lokipool-macos-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
