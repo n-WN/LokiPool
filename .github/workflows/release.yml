@@ -24,12 +24,36 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
       
+      - name: 创建缺失的头文件
+        run: |
+          sudo mkdir -p /usr/local/musl/include/linux
+          sudo tee /usr/local/musl/include/linux/mman.h > /dev/null << 'EOF'
+          /* 最小化的mman.h头文件 */
+          #ifndef _LINUX_MMAN_H
+          #define _LINUX_MMAN_H
+          
+          #define PROT_READ      0x1
+          #define PROT_WRITE     0x2
+          #define PROT_EXEC      0x4
+          #define PROT_NONE      0x0
+          
+          #define MAP_SHARED     0x01
+          #define MAP_PRIVATE    0x02
+          #define MAP_FIXED      0x10
+          #define MAP_ANONYMOUS  0x20
+          
+          #define MADV_DONTFORK  0x10
+          
+          #endif /* _LINUX_MMAN_H */
+          EOF
+      
       - name: 编译musl兼容的OpenSSL
         run: |
           wget https://www.openssl.org/source/openssl-1.1.1t.tar.gz
           tar xzf openssl-1.1.1t.tar.gz
           cd openssl-1.1.1t
-          CC=musl-gcc ./Configure no-shared no-async no-secure-memory --prefix=/usr/local/musl --openssldir=/usr/local/musl/ssl linux-x86_64
+          # 使用标准配置，但添加必要的include目录
+          CFLAGS="-I/usr/local/musl/include" CC=musl-gcc ./Configure no-shared no-async --prefix=/usr/local/musl --openssldir=/usr/local/musl/ssl linux-x86_64
           make -j$(nproc)
           sudo make install
           
