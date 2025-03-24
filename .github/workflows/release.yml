@@ -17,7 +17,7 @@ jobs:
       - name: 安装必要依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools musl-dev
+          sudo apt-get install -y musl-tools musl-dev linux-libc-dev
           
       - name: 安装Rust工具链
         uses: dtolnay/rust-toolchain@stable
@@ -29,7 +29,7 @@ jobs:
           wget https://www.openssl.org/source/openssl-1.1.1t.tar.gz
           tar xzf openssl-1.1.1t.tar.gz
           cd openssl-1.1.1t
-          CC=musl-gcc ./Configure no-shared no-async --prefix=/usr/local/musl --openssldir=/usr/local/musl/ssl linux-x86_64
+          CC=musl-gcc ./Configure no-shared no-async no-secure-memory --prefix=/usr/local/musl --openssldir=/usr/local/musl/ssl linux-x86_64
           make -j$(nproc)
           sudo make install
           
@@ -37,6 +37,8 @@ jobs:
         env:
           OPENSSL_DIR: /usr/local/musl
           OPENSSL_STATIC: 1
+          OPENSSL_INCLUDE_DIR: /usr/local/musl/include
+          OPENSSL_LIB_DIR: /usr/local/musl/lib
         run: |
           cargo build --release --target x86_64-unknown-linux-musl
           
