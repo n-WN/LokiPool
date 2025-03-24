@@ -91,19 +91,33 @@ impl Pool {
             .cloned()
     }
 
+    /// 获取所有代理，用于调试
+    pub fn get_all_proxies(&self) -> Vec<Proxy> {
+        let proxies = self.proxies.lock().unwrap();
+        proxies.values().cloned().collect()
+    }
+
     /// 测试所有代理
     pub async fn test_all(&self) -> Vec<(ProxyConfig, TestResult)> {
         let mut results = Vec::new();
         let tester = Tester::new(TestOptions::default());
         
-        let proxies_lock = self.proxies.lock().unwrap();
-        for proxy in proxies_lock.values() {
-            // 因为 test_proxy 需要可变引用，但我们只有不可变引用，
-            // 所以先克隆一份代理，测试后得到结果，但不更新原始代理
+        // 获取锁并修改代理状态
+        let mut proxies_lock = self.proxies.lock().unwrap();
+        
+        for (_, proxy) in proxies_lock.iter_mut() {
+            // 克隆代理用于测试
             let mut proxy_clone = proxy.clone();
             
             match tester.test_proxy(&mut proxy_clone) {
                 Ok(result) => {
+                    // 将测试结果应用回原始代理
+                    if result.success {
+                        proxy.update_status_and_latency(ProxyStatus::Available, result.latency);
+                    } else {
+                        proxy.update_status_and_latency(ProxyStatus::Failed, None);
+                    }
+                    
                     // 创建 ProxyConfig 用于返回结果
                     let config = ProxyConfig {
                         host: proxy.info.host.clone(),
@@ -116,15 +130,68 @@ impl Pool {
                     
                     results.push((config, result));
                 },
-                Err(_) => {
-                    // 测试失败的情况下，可以记录错误
-                    // 但对于简单实现，我们可以跳过
-                    continue;
+                Err(e) => {
+                    // 更新代理状态为失败
+                    proxy.update_status(ProxyStatus::Failed);
+                    
+                    // 创建失败的测试结果
+                    let result = TestResult {
+                        proxy_id: proxy.id.clone(),
+                        success: false,
+                        latency: None,
+                        error: Some(e.to_string()),
+                        timestamp: chrono::Utc::now(),
+                    };
+                    
+                    // 创建 ProxyConfig 用于返回结果
+                    let config = ProxyConfig {
+                        host: proxy.info.host.clone(),
+                        port: proxy.info.port,
+                        username: proxy.info.username.clone(),
+                        password: proxy.info.password.clone(),
+                        location: proxy.info.location.clone(),
+                        proxy_type: proxy.info.proxy_type.clone(),
+                    };
+                    
+                    results.push((config, result));
                 }
             }
         }
         
         results
+    }
+
+    // 添加自动重试功能，遇到失败连接时
+    pub async fn retry_connections(&self) -> bool {
+        let mut any_updated = false;
+        let mut proxies_lock = self.proxies.lock().unwrap();
+        
+        // 检查是否有失败的代理需要重试
+        let mut failed_proxies: Vec<String> = Vec::new();
+        for (id, proxy) in proxies_lock.iter() {
+            if proxy.status == ProxyStatus::Failed {
+                failed_proxies.push(id.clone());
+            }
+        }
+        
+        // 如果有失败的代理，则尝试重新测试
+        if !failed_proxies.is_empty() {
+            let tester = Tester::new(TestOptions::default());
+            
+            for id in failed_proxies {
+                if let Some(proxy) = proxies_lock.get_mut(&id) {
+                    let mut proxy_clone = proxy.clone();
+                    if let Ok(result) = tester.test_proxy(&mut proxy_clone) {
+                        if result.success {
+                            proxy.update_status_and_latency(ProxyStatus::Available, result.latency);
+                            any_updated = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        any_updated
     }
 }
 

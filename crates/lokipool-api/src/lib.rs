@@ -7,7 +7,6 @@ use std::net::SocketAddr;
 use axum::{
     routing::{get},
     Router, 
-    extract::{State, Path},
     http::StatusCode,
     response::Json,
 };
@@ -86,7 +85,7 @@ impl ApiServer {
 }
 
 /// 获取所有代理
-async fn get_proxies(State(state): State<ApiState>) -> Json<Vec<ProxyInfo>> {
+async fn get_proxies(axum::extract::State(state): axum::extract::State<ApiState>) -> Json<Vec<ProxyInfo>> {
     // 这里应该实现获取所有代理的逻辑
     // 下面是一个简单的示例
     Json(vec![])
@@ -94,8 +93,8 @@ async fn get_proxies(State(state): State<ApiState>) -> Json<Vec<ProxyInfo>> {
 
 /// 获取单个代理
 async fn get_proxy(
-    State(state): State<ApiState>, 
-    Path(id): Path<String>
+    axum::extract::State(state): axum::extract::State<ApiState>, 
+    axum::extract::Path(id): axum::extract::Path<String>
 ) -> Result<Json<ProxyInfo>, StatusCode> {
     // 这里应该实现获取单个代理的逻辑
     // 下面是一个简单的示例
@@ -103,7 +102,7 @@ async fn get_proxy(
 }
 
 /// 获取统计信息
-async fn get_stats(State(state): State<ApiState>) -> Json<Stats> {
+async fn get_stats(axum::extract::State(state): axum::extract::State<ApiState>) -> Json<Stats> {
     // 这里应该实现获取统计信息的逻辑
     // 下面是一个简单的示例
     Json(Stats {

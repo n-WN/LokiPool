@@ -115,8 +115,11 @@ async fn main() -> Result<()> {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     let shutdown_rx = shutdown_tx.subscribe();
     
-    // 创建SOCKS5服务器
-    let socks_config = SocksServerConfig::default();
+    // 创建SOCKS5服务器，从配置中读取设置
+    let socks_config = SocksServerConfig {
+        bind_address: config.socks_server.bind_address.clone(),
+        bind_port: config.socks_server.bind_port,
+    };
     let socks_server = SocksServer::new(socks_config.clone(), pool.clone());
     
     // 启动SOCKS5服务器，带退出控制
@@ -189,12 +192,18 @@ async fn main() -> Result<()> {
                         }
                         io::stdout().flush().unwrap();
                     },
+                    "diag" | "diagnose" => {
+                        println!("开始诊断代理连接...");
+                        diagnose_proxy_connection(&pool.lock().await).await;
+                        io::stdout().flush().unwrap();
+                    },
                     "help" => {
                         println!("可用命令:");
                         println!("  show - 显示当前使用的代理及其延迟");
                         println!("  list - 显示所有可用代理及其延迟排序");
                         println!("  next - 手动切换到下一个代理");
                         println!("  test - 重新测试所有代理");
+                        println!("  diag - 诊断代理连接问题");
                         println!("  help - 显示帮助信息");
                         println!("  quit - 退出程序");
                         // 确保输出被立即刷新
@@ -274,18 +283,95 @@ async fn main() -> Result<()> {
 fn create_example_config() -> Config {
     let mut config = Config::default();
     
+    // 设置SOCKS服务器配置
+    config.socks_server.bind_address = "127.0.0.1".to_string();
+    config.socks_server.bind_port = 1080;
+    
     // 添加一些示例代理
     config.proxies.push(ProxyConfig {
         host: "127.0.0.1".to_string(),
-        port: 1080,
+        port: 12333, // 使用不同于SOCKS服务器的端口
         username: None,
         password: None,
         location: Some("Local".to_string()),
         proxy_type: "socks5".to_string(),
     });
     
-    // 可以添加更多示例代理
-    // config.proxies.push(...);
-    
     config
+}
+
+// 修改诊断函数，接受互斥锁守卫而不是池引用
+async fn diagnose_proxy_connection(pool: &tokio::sync::MutexGuard<'_, Pool>) {
+    use colored::*;
+    use tokio::net::TcpStream;
+    use std::time::Duration;
+    use reqwest::Client;
+    
+    // 获取当前代理
+    let proxy = match pool.get_available() {
+        Some(p) => p,
+        None => {
+            println!("{} {}", "✗".red().bold(), "没有可用的代理!".red());
+            println!("{}:", "建议".yellow().bold());
+            println!("  1. 运行 'test' 命令重新测试所有代理");
+            println!("  2. 检查配置文件中的代理设置");
+            println!("  3. 确保上游代理服务器正常运行");
+            return;
+        }
+    };
+    
+    println!("当前代理: {}:{}", proxy.info.host, proxy.info.port);
+    
+    // 测试1: 检查代理TCP连接
+    print!("测试代理TCP连接... ");
+    match TcpStream::connect(format!("{}:{}", proxy.info.host, proxy.info.port)).await {
+        Ok(_) => println!("{} 连接成功", "✓".green().bold()),
+        Err(e) => {
+            println!("{} 连接失败: {}", "✗".red().bold(), e);
+            println!("{}:", "建议".yellow().bold());
+            println!("  1. 检查代理地址和端口是否正确");
+            println!("  2. 确认代理服务器是否在线并运行");
+            println!("  3. 检查网络连接和防火墙设置");
+            return;
+        }
+    }
+    
+    // 测试2: 测试HTTP请求
+    print!("通过代理发送HTTP请求... ");
+    let client = match Client::builder()
+        .proxy(reqwest::Proxy::all(format!("socks5://{}:{}", proxy.info.host, proxy.info.port)).unwrap())
+        .timeout(Duration::from_secs(10))
+        .build() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("{} 创建客户端失败: {}", "✗".red().bold(), e);
+            return;
+        }
+    };
+    
+    match client.get("http://www.baidu.com").send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                println!("{} 请求成功, 状态码: {}", "✓".green().bold(), resp.status());
+            } else {
+                println!("{} 请求返回非成功状态码: {}", "!".yellow().bold(), resp.status());
+            }
+        },
+        Err(e) => {
+            println!("{} 请求失败: {}", "✗".red().bold(), e);
+            println!("{}:", "建议".yellow().bold());
+            println!("  1. 确认代理支持SOCKS5协议");
+            println!("  2. 检查代理的网络连接");
+            println!("  3. 尝试使用不同的目标URL");
+        }
+    }
+    
+    // 测试3: 检查SOCKS服务器设置
+    println!("\n{}", "SOCKS服务器配置诊断:".cyan().bold());
+    println!("  主机: {}", "127.0.0.1".cyan());
+    
+    // 修复这行，去掉get_config()调用
+    println!("  端口: {}", "1080".cyan());
+    
+    println!("\n如要进行更详细的测试，请使用 tools/test_proxy.sh 脚本");
 }

@@ -19,6 +19,9 @@ pub struct Config {
     /// 代理配置
     #[serde(default)]
     pub proxy: ProxySettings,
+    /// SOCKS服务器配置
+    #[serde(default)]
+    pub socks_server: SocksServerSettings,
     /// 代理列表
     #[serde(default)]
     pub proxies: Vec<ProxyConfig>,
@@ -78,6 +81,29 @@ fn default_proxy_type() -> String {
     "socks5".to_string()
 }
 
+/// SOCKS服务器设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocksServerSettings {
+    /// 绑定地址
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
+    /// 绑定端口
+    #[serde(default = "default_bind_port")]
+    pub bind_port: u16,
+}
+
+fn default_bind_address() -> String { "127.0.0.1".to_string() }
+fn default_bind_port() -> u16 { 1080 }
+
+impl Default for SocksServerSettings {
+    fn default() -> Self {
+        Self {
+            bind_address: default_bind_address(),
+            bind_port: default_bind_port(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -85,6 +111,7 @@ impl Default for Config {
             max_connections: 100,
             retry_count: 3,
             proxy: ProxySettings::default(),
+            socks_server: SocksServerSettings::default(),
             proxies: Vec::new(),
             test_urls: vec!["http://www.baidu.com".to_string()],
         }
@@ -180,6 +207,17 @@ impl Config {
                 
                 if let Some(retries) = proxy_settings.get("retry_times").and_then(|v| v.as_integer()) {
                     config.proxy.retry_times = retries as u32;
+                }
+            }
+            
+            // 解析SOCKS服务器设置
+            if let Some(socks_settings) = parsed_toml.get("socks_server").and_then(|v| v.as_table()) {
+                if let Some(addr) = socks_settings.get("bind_address").and_then(|v| v.as_str()) {
+                    config.socks_server.bind_address = addr.to_string();
+                }
+                
+                if let Some(port) = socks_settings.get("bind_port").and_then(|v| v.as_integer()) {
+                    config.socks_server.bind_port = port as u16;
                 }
             }
             

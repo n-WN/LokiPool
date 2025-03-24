@@ -6,6 +6,11 @@ max_connections = 100  # 最大并发连接数
 retry_count = 3  # 重试次数
 test_urls = ["http://www.baidu.com"]
 
+# SOCKS服务器设置
+[socks_server]
+bind_address = "127.0.0.1"  # 监听地址
+bind_port = 1080  # 监听端口
+
 # 代理设置
 [proxy]
 proxy_file = "proxies.txt"  # 代理文件路径
@@ -17,7 +22,7 @@ retry_times = 3  # 最大重试次数
 # 格式: [[proxies]] 表示代理列表中的一项
 [[proxies]]
 host = "127.0.0.1"
-port = 1080
+port = 12333
 # username = "user"  # 可选
 # password = "pass"  # 可选
 location = "Local"  # 可选
