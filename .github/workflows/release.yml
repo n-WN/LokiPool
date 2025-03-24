@@ -1,0 +1,74 @@
+name: Build Release
+on:
+  push:
+    tags:
+      - "v*"
+env:
+  CARGO_TERM_COLOR: always
+  # 修改为你的二进制名称（根据Cargo.toml中的name）
+  BIN_NAME: "lokipool" 
+
+jobs:
+  build:
+    name: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-22.04
+            rust: stable
+            target: x86_64-unknown-linux-musl
+            release-file-suffix: x86_64-linux.tar.gz
+          - build: macos
+            os: macos-13
+            rust: stable
+            target: x86_64-apple-darwin
+            release-file-suffix: x86_64-macos.tar.gz
+          - build: windows
+            os: windows-2022
+            rust: stable-x86_64-msvc
+            target: x86_64-pc-windows-msvc
+            release-file-suffix: x86_64-windows.7z
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          override: true
+
+      # Linux需要安装musl-tools
+      - name: Install musl-tools (Linux only)
+        if: matrix.build == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binary (Linux/macOS)
+        if: matrix.build != 'windows'
+        run: strip "target/${{ matrix.target }}/release/${{ env.BIN_NAME }}"
+
+      - name: Create compressed package
+        shell: bash
+        run: |
+          mkdir -p dist temp
+          cp LICENSE README.md target/${{ matrix.target }}/release/${{ env.BIN_NAME }}* temp/
+          cd temp
+          if [ "${{ matrix.build }}" = "windows" ]; then
+            7z a -r "../dist/${{ env.BIN_NAME }}-${{ github.ref_name }}-${{ matrix.release-file-suffix }}" *
+          else
+            tar czf "../dist/${{ env.BIN_NAME }}-${{ github.ref_name }}-${{ matrix.release-file-suffix }}" *
+          fi
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
