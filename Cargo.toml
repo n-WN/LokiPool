@@ -27,7 +27,7 @@ indicatif = { version = "0.17.11", optional = true }
 console = { version = "0.15.11", optional = true } 
 
 # 添加reqwest依赖，因为src/socks_server.rs中可能需要它
-reqwest = { version = "0.12.14", features = ["socks", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12.14", features = ["socks"], default-features = false }
 
 # 移除所有core库中已经包含的依赖项
 # ...
@@ -51,6 +51,7 @@ codegen-units = 1
 opt-level = 3 
 panic = "abort" 
 strip = true 
+debug = false
 
 [[bin]]
 name = "lokipool"

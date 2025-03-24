@@ -14,11 +14,20 @@ use socks_server::{SocksServer, SocksServerConfig};
 // 如果需要使用ProxyConfig，需要将其添加到导入中
 use lokipool::ProxyConfig;
 
-const VERSION: &str = "v0.1.0";
+// const VERSION: &str = "v0.1.0";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+// const BANNER: &str = r#"
+// ╦  ╔═╗╦╔═╦╔═╗╔═╗╔═╗╦  
+// ║  ║ ║╠╩╗║╠═╝║ ║║ ║║  
+// ╩═╝╚═╝╩ ╩╩╩  ╚═╝╚═╝╩═╝
+// "#;
 const BANNER: &str = r#"
-╦  ╔═╗╦╔═╦╔═╗╔═╗╔═╗╦  
-║  ║ ║╠╩╗║╠═╝║ ║║ ║║  
-╩═╝╚═╝╩ ╩╩╩  ╚═╝╚═╝╩═╝
+██╗      ██████╗ ██╗  ██╗██╗██████╗  ██████╗  ██████╗ ██╗     
+██║     ██╔═══██╗██║ ██╔╝██║██╔══██╗██╔═══██╗██╔═══██╗██║     
+██║     ██║   ██║█████╔╝ ██║██████╔╝██║   ██║██║   ██║██║     
+██║     ██║   ██║██╔═██╗ ██║██╔═══╝ ██║   ██║██║   ██║██║     
+███████╗╚██████╔╝██║  ██╗██║██║     ╚██████╔╝╚██████╔╝███████╗
+╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝  ╚═════╝ ╚══════╝
 "#;
 
 #[tokio::main]
@@ -80,7 +89,7 @@ async fn main() -> Result<()> {
             proxy_type: "socks5".to_string(),
         };
         
-        info!("添加了一个本地示例代理 127.0.0.1:1080 以便程序继续运行");
+        info!("添加了一个本地示例代理 {}:{} 以便程序继续运行", local_proxy.host, local_proxy.port);
         let mut proxies = Vec::new();
         proxies.push(local_proxy);
         
