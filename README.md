@@ -6,9 +6,11 @@
 ![Language](https://img.shields.io/badge/语言-Rust-orange)
 ![License](https://img.shields.io/badge/许可证-GPL-green)
 
-**高性能SOCKS5代理池管理器，支持智能测速与自动切换**
+**高性能SOCKS5代理池管理器，支持智能测速与~~自动切换~~**
 
 </div>
+
+> 此版本切换代理功能未测试
 
 ## 📖 项目概述
 

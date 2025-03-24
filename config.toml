@@ -18,12 +18,28 @@ test_timeout = 10  # 测试超时时间（秒）
 health_check_interval = 300  # 健康检查间隔（秒）
 retry_times = 3  # 最大重试次数
 
+# why not use sing-b
+# 代理组配置
+# [proxy_groups]
+# 默认组，用于常规请求
+# default = ["proxy1", "proxy2", "proxy3"]
+# 高速组，用于对速度要求高的请求
+# high_speed = ["proxy1", "proxy5"]
+# 特殊用途组
+# special = ["proxy4"]
+
 # 代理列表
 # 格式: [[proxies]] 表示代理列表中的一项
 [[proxies]]
+id = "proxy1"  # 添加标识符以便引用
 host = "127.0.0.1"
 port = 12333
 # username = "user"  # 可选
 # password = "pass"  # 可选
-location = "Local"  # 可选
-proxy_type = "socks5"  # 可选，默认为socks5
+
+[[proxies]]
+id = "proxy2"
+host = "192.168.1.100"
+port = 1080
+
+# 您可以添加更多代理...
