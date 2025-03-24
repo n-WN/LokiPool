@@ -9,14 +9,25 @@ on:
 
 jobs:
   build-linux:
-    name: Build Linux Binary
+    name: 构建Linux二进制文件
     runs-on: ubuntu-latest
-    container:
-      image: messense/rust-musl-cross:x86_64-musl
     steps:
       - uses: actions/checkout@v4
       
+      - name: 安装必要依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev pkg-config libssl-dev
+          
+      - name: 安装Rust工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      
       - name: 编译Linux静态二进制文件
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+          OPENSSL_STATIC: 1
         run: |
           cargo build --release --target x86_64-unknown-linux-musl
           
@@ -27,7 +38,7 @@ jobs:
           path: target/x86_64-unknown-linux-musl/release/lokipool
 
   build-windows:
-    name: Build Windows Binary
+    name: 构建Windows二进制文件
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +65,7 @@ jobs:
           path: target/release/lokipool.exe
 
   build-macos:
-    name: Build macOS Binaries
+    name: 构建macOS二进制文件
     runs-on: macos-latest
     strategy:
       matrix:
