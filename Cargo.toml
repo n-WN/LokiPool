@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["LokiPool Developer"]
 description = "A SOCKS5 proxy pool manager with latency testing"
 
+[target.x86_64-unknown-linux-musl]
+rustflags = [
+    "-C", "link-arg=-static",
+    "-C", "target-feature=+crt-static"
+]
+
 [dependencies]
 tokio = { version = "1.36", features = ["full"] }
 futures = "0.3"
