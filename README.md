@@ -52,7 +52,7 @@ cargo build --release
 
 1. 在`proxies.txt`文件中添加SOCKS5代理服务器地址（每行一个，格式：`IP:端口`）
 2. 运行程序，将自动测试代理速度并启动本地代理服务
-3. 配置您的应用程序使用本地SOCKS5代理（默认`127.0.0.1:56789`）
+3. 配置您的应用程序使用本地SOCKS5代理（默认`127.0.0.1:1080`）
 
 ### 交互命令
 
@@ -72,7 +72,7 @@ cargo build --release
 ```toml
 [server]
 bind_host = "127.0.0.1"  # 本地绑定地址
-bind_port = 56789        # 本地绑定端口
+bind_port = 1080        # 本地绑定端口
 max_connections = 100    # 最大连接数
 ```
 
