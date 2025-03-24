@@ -5,22 +5,23 @@ on:
     tags:
       - 'v*'
     branches:
-      - main  # 可选：每次推送到main也构建
+      - main
 
 jobs:
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
+    container:
+      image: messense/rust-musl-cross:x86_64-musl
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: 编译Linux静态二进制文件
-        uses: emk/rust-musl-builder@master
-        with:
-          command: cargo build --release
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl
           
       - name: 上传Linux构建产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lokipool-linux-x86_64
           path: target/x86_64-unknown-linux-musl/release/lokipool
@@ -29,29 +30,25 @@ jobs:
     name: Build Windows Binary
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: 安装Rust工具链
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: x86_64-pc-windows-msvc
-          profile: minimal
-          override: true
+          targets: x86_64-pc-windows-msvc
       
       - name: 安装OpenSSL
         run: |
           choco install openssl
-          echo "OPENSSL_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=C:/Program Files/OpenSSL-Win64/lib" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:/Program Files/OpenSSL-Win64/include" >> $GITHUB_ENV
-        shell: bash
+          echo "OPENSSL_DIR=C:/Program Files/OpenSSL-Win64" >> $env:GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=C:/Program Files/OpenSSL-Win64/lib" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=C:/Program Files/OpenSSL-Win64/include" >> $env:GITHUB_ENV
       
       - name: 编译Windows二进制文件
         run: cargo build --release
         
       - name: 上传Windows构建产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lokipool-windows-x86_64
           path: target/release/lokipool.exe
@@ -63,15 +60,12 @@ jobs:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: 安装Rust工具链
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          profile: minimal
-          override: true
+          targets: ${{ matrix.target }}
           
       - name: 安装OpenSSL
         run: brew install openssl@1.1
@@ -84,7 +78,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
         
       - name: 上传macOS构建产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lokipool-macos-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/lokipool
@@ -94,9 +88,11 @@ jobs:
     needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - name: 下载所有构建产物
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         
       - name: 准备发布文件
         run: |
@@ -108,12 +104,10 @@ jobs:
           chmod +x release-artifacts/*
           
       - name: 创建GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             release-artifacts/lokipool-linux-x86_64
             release-artifacts/lokipool-windows-x86_64.exe
             release-artifacts/lokipool-macos-x86_64
             release-artifacts/lokipool-macos-arm64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
