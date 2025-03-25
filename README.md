@@ -31,6 +31,9 @@ LokiPool是一个使用Rust编写的高性能SOCKS5代理池管理工具，能�
 - **💻 交互式管理** - 支持通过命令行实时查看和管理代理状态
 - **🔄 自动切换** - 可配置自动定时切换代理，增强匿名性
 
+<img width="1512" alt="image" src="https://github.com/user-attachments/assets/9f1e0e07-cf36-486f-96ac-b2f6febc257b" />
+
+
 ## 🚀 安装方法
 
 ### 预编译二进制文件
